@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -170,6 +171,10 @@ func (bsm *blockstoreManager) getBlocks(ctx context.Context, ks []cid.Cid) (map[
 			if !ipld.IsNotFound(err) {
 				// Note: this isn't a fatal error. We shouldn't abort the request
 				log.Errorf("blockstore.Get(%s) error: %s", c, err)
+
+				if !strings.Contains(err.Error(), "Unseal") {
+					log.Errorf("blockstore.Get(%s) error: %s", c, err)
+				}
 			}
 			return
 		}
