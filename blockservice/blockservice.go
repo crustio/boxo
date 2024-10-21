@@ -11,6 +11,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	crust "github.com/crustio/go-ipfs-encryptor/crust"
+
 	"github.com/ipfs/boxo/blockstore"
 	"github.com/ipfs/boxo/exchange"
 	"github.com/ipfs/boxo/verifcid"
@@ -258,6 +260,22 @@ func getBlock(ctx context.Context, c cid.Cid, bs BlockService, fetchFactory func
 	block, err := blockstore.Get(ctx, c)
 	switch {
 	case err == nil:
+		// Seal
+		if root, err := crust.GetRootFromSealContext(ctx); err == nil {
+			bv := block.RawData()
+			needSeal, path, err := crust.Worker.Seal(root, false, bv)
+			if err != nil {
+				return nil, err
+			}
+
+			if needSeal && !crust.GetStoreFlag(root, block.Cid()) {
+				err = blockstore.Put(ctx, crust.NewWarpedSealedBlock(path, len(bv), c))
+				if err != nil {
+					return nil, err
+				}
+				crust.SetStoreFlag(root, block.Cid())
+			}
+		}
 		return block, nil
 	case ipld.IsNotFound(err):
 		break
@@ -288,6 +306,24 @@ func getBlock(ctx context.Context, c cid.Cid, bs BlockService, fetchFactory func
 		}
 	}
 	logger.Debugf("BlockService.BlockFetched %s", c)
+
+	// Seal
+	if root, err := crust.GetRootFromSealContext(ctx); err == nil {
+		bv := blk.RawData()
+		needSeal, path, err := crust.Worker.Seal(root, false, bv)
+		if err != nil {
+			return nil, err
+		}
+
+		if needSeal && !crust.GetStoreFlag(root, blk.Cid()) {
+			err = blockstore.Put(ctx, crust.NewWarpedSealedBlock(path, len(bv), c))
+			if err != nil {
+				return nil, err
+			}
+			crust.SetStoreFlag(root, blk.Cid())
+		}
+	}
+
 	return blk, nil
 }
 
