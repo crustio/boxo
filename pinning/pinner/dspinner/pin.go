@@ -10,6 +10,8 @@ import (
 	"path"
 	"sync"
 
+	crust "github.com/crustio/go-ipfs-encryptor/crust"
+
 	"github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
@@ -213,11 +215,34 @@ func (p *pinner) doPinRecursive(ctx context.Context, c cid.Cid, fetch bool, name
 	if fetch {
 		// temporary unlock to fetch the entire graph
 		p.lock.Unlock()
+
+		// Start seal
+		needSeal, err := crust.Worker.StartSeal(c)
+
+		if err != nil {
+			p.lock.Lock()
+			return err
+		}
+
+		if needSeal {
+			ctx = crust.GenSealContext(ctx, c)
+		}
+
 		// Fetch graph starting at node identified by cid
 		err = merkledag.FetchGraph(ctx, c, p.dserv)
 		p.lock.Lock()
 		if err != nil {
+			if needSeal {
+				crust.Worker.EndSeal(c)
+			}
 			return err
+		}
+
+		if needSeal {
+			_, err = crust.Worker.EndSeal(c)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
