@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	crust "github.com/crustio/go-ipfs-encryptor/crust"
+
 	dshelp "github.com/ipfs/boxo/datastore/dshelp"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -216,6 +218,15 @@ func (bs *blockstore) Put(ctx context.Context, block blocks.Block) error {
 			return nil // already stored.
 		}
 	}
+
+	if !crust.IsWarpedSealedBlock(block) {
+		// Has is cheaper than Put, so see if we already have it
+		exists, err := bs.datastore.Has(ctx, k)
+		if err == nil && exists {
+			return nil // already stored.
+		}
+	}
+
 	return bs.datastore.Put(ctx, k, block.RawData())
 }
 
@@ -233,6 +244,13 @@ func (bs *blockstore) PutMany(ctx context.Context, blocks []blocks.Block) error 
 		k := dshelp.MultihashToDsKey(b.Cid().Hash())
 
 		if !bs.writeThrough {
+			exists, err := bs.datastore.Has(ctx, k)
+			if err == nil && exists {
+				continue
+			}
+		}
+
+		if !crust.IsWarpedSealedBlock(b) {
 			exists, err := bs.datastore.Has(ctx, k)
 			if err == nil && exists {
 				continue

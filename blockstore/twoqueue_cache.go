@@ -5,6 +5,8 @@ import (
 	"sort"
 	"sync"
 
+	crust "github.com/crustio/go-ipfs-encryptor/crust"
+
 	lru "github.com/hashicorp/golang-lru/v2"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -243,6 +245,12 @@ func (b *tqcache) Get(ctx context.Context, k cid.Cid) (blocks.Block, error) {
 }
 
 func (b *tqcache) Put(ctx context.Context, bl blocks.Block) error {
+	if !crust.IsWarpedSealedBlock(bl) {
+		if has, _, ok := b.queryCache(bl.Cid().String()); ok && has {
+			return nil
+		}
+	}
+
 	key := cacheKey(bl.Cid())
 
 	if has, _, ok := b.queryCache(key); ok && has {
@@ -255,6 +263,13 @@ func (b *tqcache) Put(ctx context.Context, bl blocks.Block) error {
 	err := b.blockstore.Put(ctx, bl)
 	if err == nil {
 		b.cacheSize(key, len(bl.RawData()))
+
+		if !crust.IsWarpedSealedBlock(bl) {
+			b.cacheSize(bl.Cid().String(), len(bl.RawData()))
+		} else {
+			_, sb := crust.TryGetSealedBlock(bl.RawData())
+			b.cacheSize(bl.Cid().String(), sb.Size)
+		}
 	} else {
 		b.cacheInvalidate(key)
 	}
@@ -323,7 +338,7 @@ func (b *tqcache) PutMany(ctx context.Context, bs []blocks.Block) error {
 		// call put on block if result is inconclusive or we are sure that
 		// the block isn't in storage
 		key := cacheKey(blk.Cid())
-		if has, _, ok := b.queryCache(key); !ok || (ok && !has) {
+		if has, _, ok := b.queryCache(key); !ok || (ok && !has) || crust.IsWarpedSealedBlock(blk) {
 			good.append(key, blk)
 		}
 	}
@@ -349,7 +364,13 @@ func (b *tqcache) PutMany(ctx context.Context, bs []blocks.Block) error {
 		return err
 	}
 	for i, key := range good.keys {
-		b.cacheSize(key, len(good.blocks[i].RawData()))
+		block := good.blocks[i]
+		if !crust.IsWarpedSealedBlock(block) {
+			b.cacheSize(key, len(good.blocks[i].RawData()))
+		} else {
+			_, sb := crust.TryGetSealedBlock(block.RawData())
+			b.cacheSize(key, sb.Size)
+		}
 	}
 
 	return nil
