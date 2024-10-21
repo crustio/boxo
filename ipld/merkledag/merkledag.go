@@ -13,6 +13,8 @@ import (
 	legacy "github.com/ipfs/go-ipld-legacy"
 	dagpb "github.com/ipld/go-codec-dagpb"
 
+	crust "github.com/crustio/go-ipfs-encryptor/crust"
+
 	// blank import is used to register the IPLD raw codec
 	_ "github.com/ipld/go-ipld-prime/codec/raw"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
@@ -477,8 +479,12 @@ func parallelWalkDepth(ctx context.Context, getLinks GetLinks, root cid.Cid, vis
 
 	var visitlk sync.Mutex
 	var wg sync.WaitGroup
+	var inSealing bool = false
 
 	errChan := make(chan error)
+	if _, err := crust.GetRootFromSealContext(ctx); err == nil {
+		inSealing = true
+	}
 	fetchersCtx, cancel := context.WithCancel(ctx)
 	defer wg.Wait()
 	defer cancel()
@@ -498,6 +504,10 @@ func parallelWalkDepth(ctx context.Context, getLinks GetLinks, root cid.Cid, vis
 					shouldVisit = visit(ci, depth)
 					visitlk.Unlock()
 				} else {
+					shouldVisit = true
+				}
+
+				if inSealing {
 					shouldVisit = true
 				}
 
