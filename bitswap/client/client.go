@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	crust "github.com/crustio/go-ipfs-encryptor/crust"
+
 	bsbpm "github.com/ipfs/boxo/bitswap/client/internal/blockpresencemanager"
 	bsgetter "github.com/ipfs/boxo/bitswap/client/internal/getter"
 	bsmq "github.com/ipfs/boxo/bitswap/client/internal/messagequeue"
@@ -321,6 +323,17 @@ func (bs *Client) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []bl
 	wanted, notWanted := bs.sim.SplitWantedUnwanted(blks)
 	for _, b := range notWanted {
 		log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
+	}
+
+	// Put wanted blocks into blockstore
+	if crust.Worker.GetUrl() == "" {
+		if len(wanted) > 0 {
+			err := bs.blockstore.PutMany(ctx, wanted)
+			if err != nil {
+				log.Errorf("Error writing %d blocks to datastore: %s", len(wanted), err)
+				return err
+			}
+		}
 	}
 
 	allKs := make([]cid.Cid, 0, len(blks))
